@@ -30,7 +30,7 @@ class Category(PublishedAndCreatedModel):
             'Идентификатор страницы для URL;'
             'разрешены символы латиницы, цифры, '
             'дефис и подчёркивание.'
-            )
+        )
     )
 
     class Meta:
