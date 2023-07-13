@@ -68,6 +68,7 @@ class Post(PublishedAndCreatedModel):
     class Meta:
         verbose_name = 'публикация'
         verbose_name_plural = 'Публикации'
+        default_related_name = 'posts'
 
     def get_absolute_url(self):
         return reverse('blog:post_detail', kwargs={'pk': self.pk})

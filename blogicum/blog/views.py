@@ -1,24 +1,24 @@
 from typing import Any, Dict
 
-from django.core.exceptions import PermissionDenied
 from django.db.models.query import QuerySet
 from django.db.models import Count
-from django.shortcuts import get_object_or_404, render, redirect
-from django.urls import reverse_lazy, reverse
+from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views.generic import (
-    ListView,
     CreateView,
-    UpdateView,
-    DeleteView,
     DetailView,
+    DeleteView,
+    ListView,
+    UpdateView,
 )
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.http import Http404
 
-from blog.models import Post, Category, Comment
+from blog.models import Category, Comment, Post
 from blog.models import User
 
-from blog.forms import PostForm, CommentForm
+from blog.forms import CommentForm, PostForm
 
 
 class PostMixin:
@@ -35,12 +35,6 @@ class CommentMixin:
             Comment, pk=self.kwargs["comment_pk"],
             post_id=self.kwargs["post_pk"]
         )
-
-    def dispatch(self, request, *args, **kwargs):
-        instance = self.get_object()
-        if instance.author != request.user:
-            raise PermissionDenied
-        return super().dispatch(request, *args, **kwargs)
 
     def get_success_url(self):
         return reverse("blog:post_detail",
@@ -72,10 +66,6 @@ class PostListView(PostMixin, ListView):
         ).order_by("-pub_date")
         return posts
 
-    def get_context_data(self, **kwargs: Any):
-        context = super().get_context_data(**kwargs)
-        return context
-
 
 class PostCreateView(LoginRequiredMixin, CreateView):
     model = Post
@@ -93,15 +83,14 @@ class PostCreateView(LoginRequiredMixin, CreateView):
 class PostDetailView(DetailView):
     model = Post
 
-    def dispatch(self, request, *args, **kwargs):
-        instance = self.get_object()
-        if (instance.author != request.user and not instance.is_published
-                or (instance.author != request.user and instance.category
-                    and not instance.category.is_published)
-                or (instance.author != request.user
-                    and instance.pub_date > timezone.now())):
-            return render(request, 'pages/404.html', status=404)
-        return super().dispatch(request, *args, **kwargs)
+    def get_object(self, queryset=None):
+        post = get_object_or_404(Post, pk=self.kwargs["pk"])
+        if not post.is_published or not \
+           post.category.is_published or post.pub_date > timezone.now():
+            if self.request.user != post.author:
+                raise Http404("Сообщение не существует")
+
+        return post
 
     def get_context_data(self, **kwargs: Any) -> Dict[str, Any]:
         context = super().get_context_data(**kwargs)
@@ -144,23 +133,23 @@ class CommentCreateView(LoginRequiredMixin, CreateView):
         return reverse("blog:post_detail", kwargs={"pk": self.post_object.pk})
 
 
-class CommentUpdateView(CommentMixin, LoginRequiredMixin, UpdateView):
+class CommentUpdateView(CommentMixin,
+                        DispatchMixin,
+                        LoginRequiredMixin,
+                        UpdateView):
     pass
 
 
-class CommentDeleteView(CommentMixin, LoginRequiredMixin, DeleteView):
+class CommentDeleteView(CommentMixin,
+                        DispatchMixin,
+                        LoginRequiredMixin,
+                        DeleteView):
     template_name = "blog/comment_form.html"
 
 
 class CategoryListView(PostMixin, ListView):
     template_name = "blog/category.html"
     context_object_name = "page_obj"
-
-    def dispatch(self, request, *args, **kwargs):
-        self.category = get_object_or_404(Category,
-                                          slug=self.kwargs['category_slug'],
-                                          is_published=True)
-        return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self) -> QuerySet[Any]:
         self.category = get_object_or_404(Category,
@@ -185,19 +174,17 @@ class CategoryListView(PostMixin, ListView):
 
 class ProfileView(PostMixin, ListView):
     template_name = "blog/profile.html"
-    context_object_name = "page_obj"
     ordering = "-pub_date"
 
     def get_queryset(self):
         self.author = get_object_or_404(User, username=self.kwargs['username'])
         return (
-            Post.objects.prefetch_related("author", "category", "location")
+            Post.objects.select_related("author", "category", "location")
             .filter(
                 author=self.author,
             )
             .annotate(comment_count=Count("comment"))
             .order_by("-pub_date")
-            .all()
         )
 
     def get_context_data(self, **kwargs):
@@ -216,9 +203,9 @@ class ProfileUpdateView(LoginRequiredMixin, UpdateView):
         "email",
     ]
 
-    def get_object(self, queryset=None):
-        return get_object_or_404(User, username=self.kwargs.get('username'))
+    def get_object(self):
+        return self.request.user
 
     def get_success_url(self):
-        return reverse("blog:profile",
-                       kwargs={"username": self.object.username})
+        username = self.request.user.username
+        return reverse("blog:profile", kwargs={"username": username})
