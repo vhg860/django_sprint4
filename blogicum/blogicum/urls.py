@@ -10,15 +10,15 @@ handler404 = 'core.views.page_not_found'
 handler500 = 'core.views.internal_server_error'
 
 urlpatterns = [
-    path('', include('blog.urls', namespace='blog')),
-    path('pages/', include('pages.urls', namespace='pages')),
-    path('auth/', include('django.contrib.auth.urls')),
+    path('admin/', admin.site.urls),
     path('auth/registration/', CreateView.as_view(
         template_name='registration/registration_form.html',
         form_class=UserCreationForm,
-        success_url=reverse_lazy('blog:post_list'),
+        success_url=reverse_lazy('login'),
     ), name='registration'),
-    path('admin/', admin.site.urls),
+    path('', include('blog.urls', namespace='blog')),
+    path('pages/', include('pages.urls', namespace='pages')),
+    path('auth/', include('django.contrib.auth.urls')),
 ]
 
 if settings.DEBUG:

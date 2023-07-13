@@ -7,6 +7,8 @@ from core.models import PublishedAndCreatedModel
 
 User = get_user_model()
 
+TEXT_LIMIT = 20
+
 
 class Location(PublishedAndCreatedModel):
     name = models.CharField(max_length=256,
@@ -17,7 +19,7 @@ class Location(PublishedAndCreatedModel):
         verbose_name_plural = 'Местоположения'
 
     def __str__(self):
-        return self.name
+        return self.name[:TEXT_LIMIT]
 
 
 class Category(PublishedAndCreatedModel):
@@ -38,7 +40,7 @@ class Category(PublishedAndCreatedModel):
         verbose_name_plural = 'Категории'
 
     def __str__(self):
-        return self.title
+        return self.title[:TEXT_LIMIT]
 
 
 class Post(PublishedAndCreatedModel):
@@ -55,6 +57,7 @@ class Post(PublishedAndCreatedModel):
     location = models.ForeignKey(Location,
                                  on_delete=models.SET_NULL,
                                  null=True,
+                                 blank=True,
                                  verbose_name='Местоположение')
     category = models.ForeignKey(Category,
                                  on_delete=models.SET_NULL,
@@ -70,7 +73,7 @@ class Post(PublishedAndCreatedModel):
         return reverse('blog:post_detail', kwargs={'pk': self.pk})
 
     def __str__(self):
-        return self.title
+        return self.title[:TEXT_LIMIT]
 
 
 class Comment(models.Model):
@@ -83,3 +86,6 @@ class Comment(models.Model):
 
     class Meta:
         ordering = ('created_at',)
+
+    def __str__(self):
+        return self.text[:TEXT_LIMIT]
