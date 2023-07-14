@@ -82,11 +82,10 @@ class PostDetailView(DetailView):
     model = Post
 
     def get_object(self):
-        queryset = Post.objects.filter(
-            Q(is_published=True) | Q(author__username=self.request.user)
-        )
         return get_object_or_404(
-            queryset,
+            Post.objects.filter(
+                Q(is_published=True) | Q(author__username=self.request.user)
+            ),
             pk=self.kwargs['pk'],
         )
 
