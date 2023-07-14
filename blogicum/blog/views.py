@@ -1,6 +1,6 @@
 from typing import Any, Dict
 
-from django.db.models.query import QuerySet
+from django.db.models.query import QuerySet, Q
 from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
@@ -13,10 +13,8 @@ from django.views.generic import (
     UpdateView,
 )
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import Http404
 
-from blog.models import Category, Comment, Post
-from blog.models import User
+from blog.models import Category, Comment, Post, User
 
 from blog.forms import CommentForm, PostForm
 
@@ -62,7 +60,7 @@ class PostListView(PostMixin, ListView):
             is_published=True,
             category__is_published=True,
         ).annotate(
-            comment_count=Count("comment")
+            comment_count=Count("comments")
         ).order_by("-pub_date")
         return posts
 
@@ -83,19 +81,19 @@ class PostCreateView(LoginRequiredMixin, CreateView):
 class PostDetailView(DetailView):
     model = Post
 
-    def get_object(self, queryset=None):
-        post = get_object_or_404(Post, pk=self.kwargs["pk"])
-        if not post.is_published or not \
-           post.category.is_published or post.pub_date > timezone.now():
-            if self.request.user != post.author:
-                raise Http404("Сообщение не существует")
-
-        return post
+    def get_object(self):
+        queryset = Post.objects.filter(
+            Q(is_published=True) | Q(author__username=self.request.user)
+        )
+        return get_object_or_404(
+            queryset,
+            pk=self.kwargs['pk'],
+        )
 
     def get_context_data(self, **kwargs: Any) -> Dict[str, Any]:
         context = super().get_context_data(**kwargs)
         context["form"] = CommentForm()
-        context["comments"] = self.object.comment.select_related("author")
+        context["comments"] = self.object.comments.select_related("author")
         return context
 
 
@@ -120,17 +118,13 @@ class CommentCreateView(LoginRequiredMixin, CreateView):
     model = Comment
     form_class = CommentForm
 
-    def dispatch(self, request, *args, **kwargs):
-        self.post_object = get_object_or_404(Post, pk=kwargs["pk"])
-        return super().dispatch(request, *args, **kwargs)
-
     def form_valid(self, form):
         form.instance.author = self.request.user
-        form.instance.post = self.post_object
+        form.instance.post = get_object_or_404(Post, pk=self.kwargs["pk"])
         return super().form_valid(form)
 
     def get_success_url(self):
-        return reverse("blog:post_detail", kwargs={"pk": self.post_object.pk})
+        return reverse("blog:post_detail", kwargs={"pk": self.kwargs["pk"]})
 
 
 class CommentUpdateView(CommentMixin,
@@ -156,12 +150,13 @@ class CategoryListView(PostMixin, ListView):
                                           slug=self.kwargs["category_slug"],
                                           is_published=True)
         return (
-            Post.objects.filter(category=self.category,
-                                pub_date__lt=timezone.now(),
-                                category__is_published=True,
-                                is_published=True,
-                                )
-            .annotate(comment_count=Count("comment"))
+            Post.objects.select_related("category")
+            .filter(category=self.category,
+                    pub_date__lt=timezone.now(),
+                    category__is_published=True,
+                    is_published=True,
+                    )
+            .annotate(comment_count=Count("comments"))
             .order_by("-pub_date")
             .all()
         )
@@ -183,7 +178,7 @@ class ProfileView(PostMixin, ListView):
             .filter(
                 author=self.author,
             )
-            .annotate(comment_count=Count("comment"))
+            .annotate(comment_count=Count("comments"))
             .order_by("-pub_date")
         )
 
@@ -203,9 +198,16 @@ class ProfileUpdateView(LoginRequiredMixin, UpdateView):
         "email",
     ]
 
-    def get_object(self):
-        return self.request.user
+    def get_success_url(self) -> str:
+        return reverse_lazy('blog:profile',
+                            kwargs={'username': self.object.username})
 
-    def get_success_url(self):
-        username = self.request.user.username
-        return reverse("blog:profile", kwargs={"username": username})
+    def get_object(self, queryset=None):
+        return get_object_or_404(User, username=self.kwargs.get('username'))
+
+    def form_valid(self, form):
+        user = form.save(commit=False)
+        user.username = form.cleaned_data.get('username')
+        self.request.user = user
+        user.save()
+        return redirect(self.get_success_url())
